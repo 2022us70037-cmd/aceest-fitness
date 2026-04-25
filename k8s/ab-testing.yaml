@@ -1,54 +1,60 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: aceest-stable
+  name: aceest-variant-a
 spec:
-  replicas: 4
+  replicas: 2
   selector:
     matchLabels:
-      app: aceest-canary-app
-      track: stable
+      app: aceest-ab
+      variant: A
   template:
     metadata:
       labels:
-        app: aceest-canary-app
-        track: stable
+        app: aceest-ab
+        variant: A
     spec:
       containers:
       - name: aceest
         image: meghabarua/aceest-fitness:v1
         ports:
         - containerPort: 5000
+        env:
+        - name: VARIANT
+          value: "A"
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: aceest-canary
+  name: aceest-variant-b
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app: aceest-canary-app
-      track: canary
+      app: aceest-ab
+      variant: B
   template:
     metadata:
       labels:
-        app: aceest-canary-app
-        track: canary
+        app: aceest-ab
+        variant: B
     spec:
       containers:
       - name: aceest
         image: meghabarua/aceest-fitness:v2
         ports:
         - containerPort: 5000
+        env:
+        - name: VARIANT
+          value: "B"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: aceest-canary-svc
+  name: aceest-ab-svc
 spec:
   selector:
-    app: aceest-canary-app
+    app: aceest-ab
   ports:
   - port: 80
     targetPort: 5000
