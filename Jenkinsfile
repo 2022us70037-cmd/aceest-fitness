@@ -59,7 +59,7 @@ pipeline {
                     passwordVariable: 'DH_PASS')]) {
                     sh '''
                         echo $DH_PASS | docker login -u $DH_USER --password-stdin
-                        docker push meghabarua/aceest-fitness:latest
+                        docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
                     '''
                 }
             }
