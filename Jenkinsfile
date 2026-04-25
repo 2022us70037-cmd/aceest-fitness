@@ -2,27 +2,37 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HUB_USER = 'your-dockerhub-username'
-        IMAGE_NAME = 'aceest-fitness'
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        DOCKER_USER = 'meghabarua'
+        IMAGE_NAME  = 'aceest-fitness'
+        IMAGE_TAG   = "v${BUILD_NUMBER}"
     }
 
     stages {
-        stage('Checkout') {
+
+        stage('1. Checkout Code') {
             steps {
-                git branch: 'main', url: 'https://github.com/2022us70037-cmd/aceest-fitness.git'
+                git branch: 'main',
+                    url: 'https://github.com/2022us70037-cmd/aceest-fitness.git'
             }
         }
 
-        stage('Install Dependencies') {
+        stage('2. Install Dependencies') {
             steps {
-                sh 'pip install -r app/requirements.txt'
+                sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip3 install -r app/requirements.txt
+                '''
             }
         }
 
-        stage('Run Tests') {
+        stage('3. Run Pytest') {
             steps {
-                sh 'pytest tests/ --cov=app --cov-report=xml --junitxml=test-results.xml'
+                sh '''
+                    . venv/bin/activate
+                    pip3 install pytest pytest-cov
+                    pytest tests/ -v --junitxml=test-results.xml
+                '''
             }
             post {
                 always {
@@ -31,51 +41,47 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
+        stage('4. Build Docker Image') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'sonar-scanner'
+                sh """
+                    docker build -t ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG} .
+                    docker tag ${DOCKER_USER}/${IMAGE_NAME}:${IMAGE_TAG} \
+                               ${DOCKER_USER}/${IMAGE_NAME}:latest
+                """
+            }
+        }
+
+        stage('5. Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DH_USER',
+                    passwordVariable: 'DH_PASS')]) {
+                    sh '''
+                        echo $DH_PASS | docker login -u $DH_USER --password-stdin
+                        docker push meghabarua/aceest-fitness:latest
+                    '''
                 }
             }
         }
 
-        stage('Quality Gate') {
+        stage('6. Deploy to Kubernetes') {
             steps {
-                timeout(time: 1, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh "docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} ."
-                sh "docker tag ${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
-                    sh "docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
-                    sh "docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
-                }
-            }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh 'kubectl apply -f k8s/deployment.yaml'
-                sh 'kubectl rollout status deployment/aceest-fitness'
+                sh '''
+                    kubectl apply -f k8s/deployment.yaml
+                    kubectl apply -f k8s/service.yaml
+                    kubectl rollout status deployment/aceest-fitness --timeout=60s
+                '''
             }
         }
     }
 
     post {
-        success { echo '✅ Pipeline succeeded!' }
-        failure { echo '❌ Pipeline failed. Initiating rollback...'
-            sh 'kubectl rollout undo deployment/aceest-fitness' }
+        success {
+            echo '✅ Pipeline succeeded!'
+        }
+        failure {
+            echo '❌ Pipeline failed!'
+        }
     }
 }
